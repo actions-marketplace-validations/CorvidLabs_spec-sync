@@ -2,6 +2,11 @@ mod typescript;
 mod rust_lang;
 mod go;
 mod python;
+mod swift;
+mod kotlin;
+mod java;
+mod csharp;
+mod dart;
 
 use crate::types::Language;
 use std::path::Path;
@@ -28,6 +33,11 @@ pub fn get_exported_symbols(file_path: &Path) -> Vec<String> {
         Language::Rust => rust_lang::extract_exports(&content),
         Language::Go => go::extract_exports(&content),
         Language::Python => python::extract_exports(&content),
+        Language::Swift => swift::extract_exports(&content),
+        Language::Kotlin => kotlin::extract_exports(&content),
+        Language::Java => java::extract_exports(&content),
+        Language::CSharp => csharp::extract_exports(&content),
+        Language::Dart => dart::extract_exports(&content),
     };
 
     // Deduplicate preserving order

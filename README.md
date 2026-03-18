@@ -20,8 +20,13 @@ SpecSync validates that your markdown module specifications match your actual so
 |----------|----------------|---------------------|
 | TypeScript/JavaScript | `export function`, `export class`, `export type`, `export const`, `export enum`, re-exports | `.test.ts`, `.spec.ts`, `.d.ts` |
 | Rust | `pub fn`, `pub struct`, `pub enum`, `pub trait`, `pub type`, `pub const`, `pub static`, `pub mod` | (inline tests, no file exclusion) |
+| Swift | `public`/`open` func, class, struct, enum, protocol, typealias, actor, init | `*Tests.swift`, `*Test.swift` |
+| Kotlin | Top-level declarations (public by default), excludes `private`/`internal`/`protected` | `*Test.kt`, `*Spec.kt` |
+| Java | `public` class, interface, enum, record, methods, fields | `*Test.java`, `*Tests.java` |
 | Go | Uppercase identifiers: `func Name`, `type Name`, `var Name`, `const Name`, methods | `_test.go` |
 | Python | `__all__` list, or top-level `def`/`class` (excluding `_` prefixed) | `test_*.py`, `*_test.py` |
+| C# | `public` class, struct, interface, enum, record, delegate, methods | `*Test.cs`, `*Tests.cs` |
+| Dart | Top-level declarations (public = no `_` prefix), class, mixin, enum, typedef | `*_test.dart` |
 
 Language is auto-detected from file extensions. The same spec format works for any language.
 
@@ -210,8 +215,13 @@ src/
     ├── mod.rs        Language dispatch + file utilities
     ├── typescript.rs TypeScript/JS export extraction
     ├── rust_lang.rs  Rust pub item extraction
+    ├── swift.rs      Swift public/open item extraction
+    ├── kotlin.rs     Kotlin public item extraction
+    ├── java.rs       Java public item extraction
     ├── go.rs         Go exported identifier extraction
-    └── python.rs     Python __all__ / top-level extraction
+    ├── python.rs     Python __all__ / top-level extraction
+    ├── csharp.rs     C# public item extraction
+    └── dart.rs       Dart public item extraction
 ```
 
 ## License

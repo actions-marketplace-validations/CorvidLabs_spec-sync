@@ -75,6 +75,11 @@ pub enum Language {
     Rust,
     Go,
     Python,
+    Swift,
+    Kotlin,
+    Java,
+    CSharp,
+    Dart,
 }
 
 impl Language {
@@ -85,6 +90,11 @@ impl Language {
             "rs" => Some(Language::Rust),
             "go" => Some(Language::Go),
             "py" => Some(Language::Python),
+            "swift" => Some(Language::Swift),
+            "kt" | "kts" => Some(Language::Kotlin),
+            "java" => Some(Language::Java),
+            "cs" => Some(Language::CSharp),
+            "dart" => Some(Language::Dart),
             _ => None,
         }
     }
@@ -96,6 +106,11 @@ impl Language {
             Language::Rust => &["rs"],
             Language::Go => &["go"],
             Language::Python => &["py"],
+            Language::Swift => &["swift"],
+            Language::Kotlin => &["kt", "kts"],
+            Language::Java => &["java"],
+            Language::CSharp => &["cs"],
+            Language::Dart => &["dart"],
         }
     }
 
@@ -106,6 +121,11 @@ impl Language {
             Language::Rust => &[], // Rust tests are inline, not separate files
             Language::Go => &["_test.go"],
             Language::Python => &["test_", "_test.py"],
+            Language::Swift => &["Tests.swift", "Test.swift"],
+            Language::Kotlin => &["Test.kt", "Tests.kt", "Spec.kt"],
+            Language::Java => &["Test.java", "Tests.java"],
+            Language::CSharp => &["Tests.cs", "Test.cs"],
+            Language::Dart => &["_test.dart"],
         }
     }
 }
