@@ -2,9 +2,11 @@
 
 Bidirectional spec-to-code validation. Keep your module specs and source code in sync with CI-enforced contract checking.
 
+**Written in Rust. Language-agnostic. Blazing fast.**
+
 ## What it does
 
-SpecSync validates that your markdown module specifications match your actual TypeScript source code — in both directions:
+SpecSync validates that your markdown module specifications match your actual source code — in both directions:
 
 - **Code exports something not in the spec?** Warning: undocumented export
 - **Spec documents something that doesn't exist?** Error: stale spec entry
@@ -12,14 +14,26 @@ SpecSync validates that your markdown module specifications match your actual Ty
 - **DB table in spec doesn't exist in schema?** Error: phantom table
 - **Required section missing from spec?** Error: incomplete spec
 
+## Supported Languages
+
+| Language | Export Detection | Test File Exclusion |
+|----------|----------------|---------------------|
+| TypeScript/JavaScript | `export function`, `export class`, `export type`, `export const`, `export enum`, re-exports | `.test.ts`, `.spec.ts`, `.d.ts` |
+| Rust | `pub fn`, `pub struct`, `pub enum`, `pub trait`, `pub type`, `pub const`, `pub static`, `pub mod` | (inline tests, no file exclusion) |
+| Go | Uppercase identifiers: `func Name`, `type Name`, `var Name`, `const Name`, methods | `_test.go` |
+| Python | `__all__` list, or top-level `def`/`class` (excluding `_` prefixed) | `test_*.py`, `*_test.py` |
+
+Language is auto-detected from file extensions. The same spec format works for any language.
+
 ## Install
 
 ```bash
-# bun
-bun add -d specsync
+# From source
+cargo install --path .
 
-# npm
-npm install --save-dev specsync
+# Or build release binary
+cargo build --release
+# Binary at: target/release/specsync
 ```
 
 ## Quick start
@@ -131,7 +145,8 @@ Create a `specsync.json` in your project root:
     "Change Log"
   ],
   "excludeDirs": ["__tests__"],
-  "excludePatterns": ["**/__tests__/**", "**/*.test.ts", "**/*.spec.ts"]
+  "excludePatterns": ["**/__tests__/**", "**/*.test.ts", "**/*.spec.ts"],
+  "sourceExtensions": []
 }
 ```
 
@@ -144,6 +159,7 @@ Create a `specsync.json` in your project root:
 | `requiredSections` | Standard set | Required markdown sections |
 | `excludeDirs` | `["__tests__"]` | Dirs excluded from coverage |
 | `excludePatterns` | test files | File patterns excluded from coverage |
+| `sourceExtensions` | all supported | Restrict to specific extensions (e.g., `["ts", "rs"]`) |
 
 ## CLI
 
@@ -168,7 +184,7 @@ Flags:
 ```yaml
 # GitHub Actions
 - name: Spec check
-  run: npx specsync check --strict --require-coverage 100
+  run: specsync check --strict --require-coverage 100
 ```
 
 ## How it works
@@ -176,9 +192,27 @@ Flags:
 1. **Discovers** all `*.spec.md` files in your specs directory
 2. **Parses** YAML frontmatter (zero-dependency regex parser, no YAML library)
 3. **Validates structure** — required fields, required sections, file existence
-4. **Validates API surface** — parses TypeScript exports and cross-references against spec's Public API tables
+4. **Validates API surface** — auto-detects language, parses exports, cross-references against spec's Public API tables
 5. **Validates dependencies** — checks that `depends_on` spec files exist
 6. **Reports coverage** — which source files and modules have specs
+
+## Architecture
+
+```
+src/
+├── main.rs           CLI (clap) + output formatting
+├── types.rs          Core data types + config schema
+├── config.rs         specsync.json loading
+├── parser.rs         Frontmatter + spec body parsing
+├── validator.rs      Spec validation + coverage computation
+├── generator.rs      Spec scaffolding for new modules
+└── exports/
+    ├── mod.rs        Language dispatch + file utilities
+    ├── typescript.rs TypeScript/JS export extraction
+    ├── rust_lang.rs  Rust pub item extraction
+    ├── go.rs         Go exported identifier extraction
+    └── python.rs     Python __all__ / top-level extraction
+```
 
 ## License
 
