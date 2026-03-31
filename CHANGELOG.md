@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Requirements as default required section** — `## Requirements` is now the 8th default required section, positioned between Purpose and Public API. Specs are expected to document user stories and acceptance criteria. All templates (default + 5 language-specific) include a structured Requirements section. Existing specs missing this section will get a validation error — add `## Requirements` or customize `requiredSections` in config to opt out (#81).
+- **`requirements.md` companion file** — a new per-module companion file scaffolded alongside `tasks.md` and `context.md` by `specsync generate` and `specsync add-spec`. The template includes User Stories, Acceptance Criteria, Constraints, and Out of Scope sections. This keeps the spec focused as a technical contract (authored by Dev/Architect) while giving Product/Design their own space for user stories and acceptance criteria.
+- **AGENTS.md hook target** — `specsync hooks install --agents` installs spec-sync instructions into `AGENTS.md`, the emerging standard for multi-agent instruction files.
 
 ## [3.0.0] - 2026-03-30
 
