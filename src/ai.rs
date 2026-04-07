@@ -168,14 +168,18 @@ pub fn resolve_ai_provider(
             return resolve_api_provider(&provider, config);
         }
 
+        // Check command_for_provider first — some providers (e.g. Cursor) have
+        // no CLI pipe mode and should return their specific error message
+        // before we check binary availability.
+        let cmd = command_for_provider(&provider, config.ai_model.as_deref())?;
+
         if !is_binary_available(provider.binary_name()) {
             return Err(format!(
                 "Provider \"{name}\" selected but `{}` is not installed or not on PATH",
                 provider.binary_name()
             ));
         }
-        return command_for_provider(&provider, config.ai_model.as_deref())
-            .map(ResolvedProvider::Cli);
+        return Ok(ResolvedProvider::Cli(cmd));
     }
 
     // 2. aiCommand in config (explicit override)
@@ -189,6 +193,8 @@ pub fn resolve_ai_provider(
             return resolve_api_provider(provider, config);
         }
 
+        let cmd = command_for_provider(provider, config.ai_model.as_deref())?;
+
         if !is_binary_available(provider.binary_name()) {
             return Err(format!(
                 "Provider \"{}\" configured but `{}` is not installed or not on PATH",
@@ -196,8 +202,7 @@ pub fn resolve_ai_provider(
                 provider.binary_name()
             ));
         }
-        return command_for_provider(provider, config.ai_model.as_deref())
-            .map(ResolvedProvider::Cli);
+        return Ok(ResolvedProvider::Cli(cmd));
     }
 
     // 4. Environment variable
