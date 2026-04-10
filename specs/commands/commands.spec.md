@@ -58,6 +58,7 @@ Shared command infrastructure used by all CLI subcommands. Provides config loadi
 | `new` | Quick-create minimal specs |
 | `report` | Per-module coverage report with staleness |
 | `resolve` | Resolve cross-project dependency refs |
+| `rules` | List active validation rules (built-in and custom) |
 | `stale` | Git-based staleness detection for spec drift |
 | `scaffold` | Full spec scaffolding with templates |
 | `score` | Spec quality scoring (0-100, A-F) |
