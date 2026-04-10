@@ -1,6 +1,6 @@
 ---
 module: comment
-version: 1
+version: 2
 status: stable
 files:
   - src/comment.rs
@@ -91,4 +91,5 @@ GitHub PR comment formatting with spec links and actionable suggestions. Produce
 
 | Date | Change |
 |------|--------|
+| 2026-04-10 | Populated requirements.md with user stories, acceptance criteria, constraints, and out-of-scope items |
 | 2026-04-07 | Initial spec |

@@ -1,6 +1,6 @@
 ---
 module: view
-version: 1
+version: 2
 status: stable
 files:
   - src/view.rs
@@ -96,4 +96,5 @@ Filters spec content to show only sections relevant to a specific role (dev, qa,
 
 | Date | Change |
 |------|--------|
+| 2026-04-10 | Populated requirements.md with user stories, acceptance criteria, constraints, and out-of-scope items |
 | 2026-04-06 | Initial spec for v3.3.0 |

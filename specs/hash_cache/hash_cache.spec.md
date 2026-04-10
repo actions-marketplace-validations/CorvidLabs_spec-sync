@@ -1,6 +1,6 @@
 ---
 module: hash_cache
-version: 1
+version: 2
 status: stable
 files:
   - src/hash_cache.rs
@@ -108,4 +108,5 @@ Uses SHA-256 content hashing to track which spec files, companion files, and sou
 
 | Date | Change |
 |------|--------|
+| 2026-04-10 | Populated requirements.md with user stories, acceptance criteria, constraints, and out-of-scope items |
 | 2026-04-06 | Initial spec for v3.3.0 |

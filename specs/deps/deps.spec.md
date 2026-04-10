@@ -1,6 +1,6 @@
 ---
 module: deps
-version: 1
+version: 2
 status: stable
 files:
   - src/deps.rs
@@ -94,4 +94,5 @@ Cross-module dependency validation. Parses `depends_on` declarations from spec f
 
 | Date | Change |
 |------|--------|
+| 2026-04-10 | Populated requirements.md with user stories, acceptance criteria, constraints, and out-of-scope items |
 | 2026-04-07 | Initial spec |
