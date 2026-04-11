@@ -174,10 +174,10 @@ fn resolve_api_provider(
 ///
 /// Resolution order:
 /// 1. `--provider` CLI flag (passed as `cli_provider`)
-/// 2. `aiCommand` in config (explicit override always wins)
+/// 2. `aiCommand` in config — includes `.specsync/config.local.toml` overrides
 /// 3. `aiProvider` in config (resolved to CLI command or API)
 /// 4. `SPECSYNC_AI_COMMAND` env var
-/// 5. Auto-detect installed CLIs, then check for API keys
+/// 5. Auto-detect installed CLIs (alphabetical), then check for API keys
 pub fn resolve_ai_provider(
     config: &SpecSyncConfig,
     cli_provider: Option<&str>,
@@ -265,8 +265,8 @@ pub fn resolve_ai_provider(
     Err("No AI provider found. Options:\n\n\
          CLI providers (install a tool):\n  \
          claude     — Claude Code CLI (npm i -g @anthropic-ai/claude-code)\n  \
-         ollama     — Local models (ollama.com)\n  \
-         copilot    — GitHub Copilot (gh extension install github/gh-copilot)\n\n\
+         copilot    — GitHub Copilot (gh extension install github/gh-copilot)\n  \
+         ollama     — Local models (ollama.com)\n\n\
          API providers (just set a key — no CLI needed):\n  \
          anthropic  — set ANTHROPIC_API_KEY env var\n  \
          openai     — set OPENAI_API_KEY env var\n  \
