@@ -32,7 +32,7 @@ use clap::Parser;
 use colored::Colorize;
 use std::process;
 
-use cli::{Cli, Command};
+use cli::{Cli, Command, LifecycleAction};
 
 fn main() {
     let result = std::panic::catch_unwind(run);
@@ -99,6 +99,8 @@ fn run() {
             explain,
             stale,
             &specs,
+            &cli.exclude_status,
+            &cli.only_status,
         ),
         Command::Coverage => commands::coverage::cmd_coverage(
             &root,
@@ -125,7 +127,15 @@ fn run() {
             explain,
             all,
             specs,
-        } => commands::score::cmd_score(&root, format, explain, all, &specs),
+        } => commands::score::cmd_score(
+            &root,
+            format,
+            explain,
+            all,
+            &specs,
+            &cli.exclude_status,
+            &cli.only_status,
+        ),
         Command::Watch => watch::run_watch(&root, cli.strict, cli.require_coverage),
         Command::Mcp => mcp::run_mcp_server(&root),
         Command::AddSpec { name } => commands::scaffold::cmd_add_spec(&root, &name),
@@ -168,13 +178,63 @@ fn run() {
             label.as_deref(),
             from_dir.as_deref(),
         ),
-        Command::Stale { threshold } => commands::stale::cmd_stale(&root, format, threshold),
-        Command::Report { stale_threshold } => {
-            commands::report::cmd_report(&root, format, stale_threshold)
-        }
+        Command::Stale { threshold } => commands::stale::cmd_stale(
+            &root,
+            format,
+            threshold,
+            &cli.exclude_status,
+            &cli.only_status,
+        ),
+        Command::Report { stale_threshold } => commands::report::cmd_report(
+            &root,
+            format,
+            stale_threshold,
+            &cli.exclude_status,
+            &cli.only_status,
+        ),
         Command::Comment { pr, base } => commands::comment::cmd_comment(&root, pr, &base),
         Command::Rules => commands::rules::cmd_rules(&root),
         Command::Changelog { range } => commands::changelog::cmd_changelog(&root, &range, format),
+        Command::Migrate { dry_run, no_backup } => {
+            commands::migrate::cmd_migrate(&root, format, dry_run, no_backup)
+        }
+        Command::Lifecycle { action } => match action {
+            LifecycleAction::Promote { spec, force } => {
+                commands::lifecycle::cmd_promote(&root, &spec, format, force)
+            }
+            LifecycleAction::Demote { spec, force } => {
+                commands::lifecycle::cmd_demote(&root, &spec, format, force)
+            }
+            LifecycleAction::Set {
+                spec,
+                status,
+                force,
+            } => commands::lifecycle::cmd_set(&root, &spec, &status, format, force),
+            LifecycleAction::Status { spec } => {
+                commands::lifecycle::cmd_status(&root, spec.as_deref(), format)
+            }
+            LifecycleAction::History { spec } => {
+                commands::lifecycle::cmd_history(&root, &spec, format)
+            }
+            LifecycleAction::Guard { spec, target } => {
+                commands::lifecycle::cmd_guard(&root, &spec, target.as_deref(), format)
+            }
+            LifecycleAction::AutoPromote { dry_run } => {
+                commands::lifecycle::cmd_auto_promote(&root, format, dry_run)
+            }
+            LifecycleAction::Enforce {
+                require_status,
+                max_age,
+                allowed,
+                all,
+            } => commands::lifecycle::cmd_enforce(
+                &root,
+                format,
+                require_status || all,
+                max_age || all,
+                allowed || all,
+            ),
+        },
     }
 }
 

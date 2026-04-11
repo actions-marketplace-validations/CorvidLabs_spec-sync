@@ -37,6 +37,14 @@ pub struct Cli {
     /// Overrides the `enforcement` field in specsync.json.
     #[arg(long, value_name = "MODE", global = true)]
     pub enforcement: Option<types::EnforcementMode>,
+
+    /// Exclude specs with these statuses (comma-separated, e.g. "deprecated,archived")
+    #[arg(long, value_name = "STATUSES", global = true, value_delimiter = ',')]
+    pub exclude_status: Vec<String>,
+
+    /// Only include specs with these statuses (comma-separated, e.g. "active,stable")
+    #[arg(long, value_name = "STATUSES", global = true, value_delimiter = ',')]
+    pub only_status: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -260,6 +268,88 @@ pub enum Command {
         /// Git ref range (e.g., v0.1..v0.2, HEAD~5..HEAD)
         #[arg(value_name = "RANGE")]
         range: String,
+    },
+    /// Migrate a spec-sync project from v3.x to v4.0.0
+    Migrate {
+        /// Preview migration without writing any files
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip backup creation (not recommended)
+        #[arg(long)]
+        no_backup: bool,
+    },
+    /// Manage spec lifecycle statuses (promote, demote, set, status)
+    Lifecycle {
+        #[command(subcommand)]
+        action: LifecycleAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum LifecycleAction {
+    /// Advance a spec to the next lifecycle status
+    Promote {
+        /// Spec to promote (module name, filename, or path)
+        spec: String,
+        /// Skip transition validation
+        #[arg(long)]
+        force: bool,
+    },
+    /// Move a spec back to the previous lifecycle status
+    Demote {
+        /// Spec to demote (module name, filename, or path)
+        spec: String,
+        /// Skip transition validation
+        #[arg(long)]
+        force: bool,
+    },
+    /// Set a spec to a specific lifecycle status
+    Set {
+        /// Spec to update (module name, filename, or path)
+        spec: String,
+        /// Target status (draft, review, active, stable, deprecated, archived)
+        status: String,
+        /// Skip transition validation
+        #[arg(long)]
+        force: bool,
+    },
+    /// Show lifecycle status of specs (all or filtered)
+    Status {
+        /// Specific spec to show (shows all if omitted)
+        spec: Option<String>,
+    },
+    /// Show transition history for a spec
+    History {
+        /// Spec to show history for (module name, filename, or path)
+        spec: String,
+    },
+    /// Dry-run guard evaluation — check if a transition would pass guards
+    Guard {
+        /// Spec to check (module name, filename, or path)
+        spec: String,
+        /// Target status to check (checks all valid transitions if omitted)
+        target: Option<String>,
+    },
+    /// Auto-promote all specs that pass their guards
+    AutoPromote {
+        /// Show what would be promoted without writing files
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// CI enforcement — validate lifecycle rules, exit non-zero on violations
+    Enforce {
+        /// Require all specs to have a status field
+        #[arg(long)]
+        require_status: bool,
+        /// Flag specs that exceed their max-age for the current status (configured in lifecycle.maxAge)
+        #[arg(long)]
+        max_age: bool,
+        /// Require all specs to be in one of the allowed statuses (configured in lifecycle.allowedStatuses)
+        #[arg(long)]
+        allowed: bool,
+        /// Run all enforcement checks (equivalent to --require-status --max-age --allowed)
+        #[arg(long)]
+        all: bool,
     },
 }
 

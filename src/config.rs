@@ -141,28 +141,326 @@ fn dir_contains_source_files(dir: &Path, ignored: &HashSet<&str>, max_depth: usi
     false
 }
 
-/// Load config from specsync.json or .specsync.toml, falling back to defaults.
+/// Load config from TOML or JSON, falling back to defaults.
 /// When no config file exists, auto-detects source directories.
 ///
-/// Config file search order:
-/// 1. `specsync.json` (JSON format)
-/// 2. `.specsync.toml` (TOML format)
-pub fn load_config(root: &Path) -> SpecSyncConfig {
-    let json_path = root.join("specsync.json");
-    let toml_path = root.join(".specsync.toml");
+/// Config file search order (v4 first, then legacy):
+/// Load config from a specific file path (JSON or TOML based on extension).
+/// Used by migration to convert a known source file rather than relying on precedence.
+pub fn load_config_from_path(config_path: &Path, root: &Path) -> SpecSyncConfig {
+    let ext = config_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    match ext {
+        "toml" => load_toml_config(config_path, root),
+        _ => load_json_config(config_path, root),
+    }
+}
 
-    if json_path.exists() {
-        return load_json_config(&json_path, root);
+/// 1. `.specsync/config.toml` (v4 TOML — canonical)
+/// 2. `.specsync/config.json` (v4 JSON — pre-TOML migration)
+/// 3. `.specsync.toml` (legacy root TOML)
+/// 4. `specsync.json` (legacy root JSON)
+pub fn load_config(root: &Path) -> SpecSyncConfig {
+    let v4_toml = root.join(".specsync/config.toml");
+    let v4_json = root.join(".specsync/config.json");
+    let legacy_toml = root.join(".specsync.toml");
+    let legacy_json = root.join("specsync.json");
+
+    if v4_toml.exists() {
+        return load_toml_config(&v4_toml, root);
     }
 
-    if toml_path.exists() {
-        return load_toml_config(&toml_path, root);
+    if v4_json.exists() {
+        return load_json_config(&v4_json, root);
+    }
+
+    if legacy_toml.exists() {
+        return load_toml_config(&legacy_toml, root);
+    }
+
+    if legacy_json.exists() {
+        return load_json_config(&legacy_json, root);
     }
 
     SpecSyncConfig {
         source_dirs: detect_source_dirs(root),
         ..Default::default()
     }
+}
+
+/// Detect whether this project is using a legacy 3.x layout.
+/// Returns true if root-level config files exist without a .specsync/version stamp.
+pub fn is_legacy_layout(root: &Path) -> bool {
+    let has_root_json = root.join("specsync.json").exists();
+    let has_root_toml = root.join(".specsync.toml").exists();
+    let has_root_registry = root.join("specsync-registry.toml").exists();
+    let has_v4_version = root.join(".specsync/version").exists();
+
+    (has_root_json || has_root_toml || has_root_registry) && !has_v4_version
+}
+
+/// Escape a string value for safe embedding in a TOML quoted string.
+fn toml_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
+/// Serialize a SpecSyncConfig to TOML format string.
+pub fn config_to_toml(config: &SpecSyncConfig) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("# spec-sync v4 configuration".to_string());
+    lines.push("# Docs: https://github.com/CorvidLabs/spec-sync".to_string());
+    lines.push(String::new());
+
+    // Core settings
+    lines.push(format!(
+        "specs_dir = \"{}\"",
+        toml_escape(&config.specs_dir)
+    ));
+
+    if !config.source_dirs.is_empty() {
+        lines.push(format!(
+            "source_dirs = [{}]",
+            config
+                .source_dirs
+                .iter()
+                .map(|s| format!("\"{}\"", toml_escape(s)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    if let Some(ref schema_dir) = config.schema_dir {
+        lines.push(format!("schema_dir = \"{}\"", toml_escape(schema_dir)));
+    }
+    if let Some(ref schema_pattern) = config.schema_pattern {
+        lines.push(format!(
+            "schema_pattern = \"{}\"",
+            toml_escape(schema_pattern)
+        ));
+    }
+
+    if !config.exclude_dirs.is_empty() {
+        lines.push(format!(
+            "exclude_dirs = [{}]",
+            config
+                .exclude_dirs
+                .iter()
+                .map(|s| format!("\"{}\"", toml_escape(s)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !config.exclude_patterns.is_empty() {
+        lines.push(format!(
+            "exclude_patterns = [{}]",
+            config
+                .exclude_patterns
+                .iter()
+                .map(|s| format!("\"{}\"", toml_escape(s)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !config.source_extensions.is_empty() {
+        lines.push(format!(
+            "source_extensions = [{}]",
+            config
+                .source_extensions
+                .iter()
+                .map(|s| format!("\"{}\"", toml_escape(s)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    if !config.required_sections.is_empty() {
+        lines.push(format!(
+            "required_sections = [{}]",
+            config
+                .required_sections
+                .iter()
+                .map(|s| format!("\"{}\"", toml_escape(s)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    // Export level
+    match config.export_level {
+        crate::types::ExportLevel::Type => lines.push("export_level = \"type\"".to_string()),
+        crate::types::ExportLevel::Member => {} // default, omit
+    }
+
+    // Enforcement
+    match config.enforcement {
+        crate::types::EnforcementMode::Warn => {} // default, omit
+        crate::types::EnforcementMode::EnforceNew => {
+            lines.push("enforcement = \"enforce-new\"".to_string());
+        }
+        crate::types::EnforcementMode::Strict => {
+            lines.push("enforcement = \"strict\"".to_string());
+        }
+    }
+
+    // AI settings
+    if let Some(ref provider) = config.ai_provider {
+        let name = match provider {
+            crate::types::AiProvider::Claude => "claude",
+            crate::types::AiProvider::Cursor => "cursor",
+            crate::types::AiProvider::Copilot => "copilot",
+            crate::types::AiProvider::Ollama => "ollama",
+            crate::types::AiProvider::Anthropic => "anthropic",
+            crate::types::AiProvider::OpenAi => "openai",
+            crate::types::AiProvider::Gemini => "gemini",
+            crate::types::AiProvider::DeepSeek => "deepseek",
+            crate::types::AiProvider::Groq => "groq",
+            crate::types::AiProvider::Mistral => "mistral",
+            crate::types::AiProvider::XAi => "xai",
+            crate::types::AiProvider::Together => "together",
+            crate::types::AiProvider::Custom => "custom",
+        };
+        lines.push(format!("ai_provider = \"{name}\""));
+    }
+    if let Some(ref model) = config.ai_model {
+        lines.push(format!("ai_model = \"{}\"", toml_escape(model)));
+    }
+    if let Some(ref cmd) = config.ai_command {
+        lines.push(format!("ai_command = \"{}\"", toml_escape(cmd)));
+    }
+    if config.ai_api_key.is_some() {
+        eprintln!("[warn] ai_api_key found in config but NOT written to config.toml.");
+        eprintln!("       Set the AI_API_KEY environment variable instead.");
+    }
+    if let Some(ref url) = config.ai_base_url {
+        lines.push(format!("ai_base_url = \"{}\"", toml_escape(url)));
+    }
+    if let Some(timeout) = config.ai_timeout {
+        lines.push(format!("ai_timeout = {timeout}"));
+    }
+
+    if let Some(days) = config.task_archive_days {
+        lines.push(format!("task_archive_days = {days}"));
+    }
+
+    // Rules section
+    let rules = &config.rules;
+    let has_rules = rules.max_changelog_entries.is_some()
+        || rules.require_behavioral_examples.is_some()
+        || rules.min_invariants.is_some()
+        || rules.max_spec_size_kb.is_some()
+        || rules.require_depends_on.is_some();
+
+    if has_rules {
+        lines.push(String::new());
+        lines.push("[rules]".to_string());
+        if let Some(n) = rules.max_changelog_entries {
+            lines.push(format!("max_changelog_entries = {n}"));
+        }
+        if let Some(b) = rules.require_behavioral_examples {
+            lines.push(format!("require_behavioral_examples = {b}"));
+        }
+        if let Some(n) = rules.min_invariants {
+            lines.push(format!("min_invariants = {n}"));
+        }
+        if let Some(n) = rules.max_spec_size_kb {
+            lines.push(format!("max_spec_size_kb = {n}"));
+        }
+        if let Some(b) = rules.require_depends_on {
+            lines.push(format!("require_depends_on = {b}"));
+        }
+    }
+
+    // GitHub section
+    if let Some(ref gh) = config.github {
+        lines.push(String::new());
+        lines.push("[github]".to_string());
+        if let Some(ref repo) = gh.repo {
+            lines.push(format!("repo = \"{}\"", toml_escape(repo)));
+        }
+        if !gh.drift_labels.is_empty() {
+            lines.push(format!(
+                "drift_labels = [{}]",
+                gh.drift_labels
+                    .iter()
+                    .map(|s| format!("\"{}\"", toml_escape(s)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if !gh.verify_issues {
+            lines.push(format!("verify_issues = {}", gh.verify_issues));
+        }
+    }
+
+    // Lifecycle section
+    let lc = &config.lifecycle;
+    let has_lifecycle = !lc.guards.is_empty()
+        || !lc.track_history
+        || !lc.max_age.is_empty()
+        || !lc.allowed_statuses.is_empty();
+
+    if has_lifecycle {
+        lines.push(String::new());
+        lines.push("[lifecycle]".to_string());
+        if !lc.track_history {
+            lines.push(format!("track_history = {}", lc.track_history));
+        }
+        if !lc.allowed_statuses.is_empty() {
+            lines.push(format!(
+                "allowed_statuses = [{}]",
+                lc.allowed_statuses
+                    .iter()
+                    .map(|s| format!("\"{}\"", toml_escape(s)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if !lc.max_age.is_empty() {
+            lines.push(String::new());
+            lines.push("[lifecycle.max_age]".to_string());
+            for (status, days) in &lc.max_age {
+                lines.push(format!("{status} = {days}"));
+            }
+        }
+        if !lc.guards.is_empty() {
+            for (transition, guard) in &lc.guards {
+                lines.push(String::new());
+                lines.push(format!("[lifecycle.guards.\"{transition}\"]"));
+                if let Some(score) = guard.min_score {
+                    lines.push(format!("min_score = {score}"));
+                }
+                if !guard.require_sections.is_empty() {
+                    lines.push(format!(
+                        "require_sections = [{}]",
+                        guard
+                            .require_sections
+                            .iter()
+                            .map(|s| format!("\"{}\"", toml_escape(s)))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+                if let Some(no_stale) = guard.no_stale {
+                    lines.push(format!("no_stale = {no_stale}"));
+                }
+                if let Some(threshold) = guard.stale_threshold {
+                    lines.push(format!("stale_threshold = {threshold}"));
+                }
+                if let Some(ref msg) = guard.message {
+                    lines.push(format!("message = \"{}\"", toml_escape(msg)));
+                }
+            }
+        }
+    }
+
+    lines.push(String::new()); // trailing newline
+    lines.join("\n")
 }
 
 /// Known config keys in specsync.json (camelCase).
@@ -188,6 +486,7 @@ const KNOWN_JSON_KEYS: &[&str] = &[
     "taskArchiveDays",
     "github",
     "enforcement",
+    "lifecycle",
 ];
 
 fn load_json_config(config_path: &Path, root: &Path) -> SpecSyncConfig {
@@ -274,6 +573,14 @@ fn load_toml_config(config_path: &Path, root: &Path) -> SpecSyncConfig {
                         parse_toml_github_key(key, value, &mut config);
                         continue;
                     }
+                    "lifecycle" => {
+                        parse_toml_lifecycle_key(key, value, &mut config.lifecycle);
+                        continue;
+                    }
+                    s if s.starts_with("lifecycle.") => {
+                        parse_toml_lifecycle_nested(s, key, value, &mut config.lifecycle);
+                        continue;
+                    }
                     _ => {
                         // Unknown section — skip silently
                         continue;
@@ -327,8 +634,25 @@ fn load_toml_config(config_path: &Path, root: &Path) -> SpecSyncConfig {
                         config.task_archive_days = Some(n);
                     }
                 }
+                "enforcement" => {
+                    let s = parse_toml_string(value);
+                    match s.as_str() {
+                        "strict" => {
+                            config.enforcement = crate::types::EnforcementMode::Strict;
+                        }
+                        "enforce-new" | "enforce_new" => {
+                            config.enforcement = crate::types::EnforcementMode::EnforceNew;
+                        }
+                        "warn" => {
+                            config.enforcement = crate::types::EnforcementMode::Warn;
+                        }
+                        _ => eprintln!(
+                            "Warning: unknown enforcement \"{s}\" (expected \"warn\", \"enforce-new\", or \"strict\")"
+                        ),
+                    }
+                }
                 _ => {
-                    eprintln!("Warning: unknown key \"{key}\" in .specsync.toml (ignored)");
+                    eprintln!("Warning: unknown key \"{key}\" in config.toml (ignored)");
                 }
             }
         }
@@ -411,6 +735,54 @@ fn parse_toml_github_key(key: &str, value: &str, config: &mut SpecSyncConfig) {
         "verify_issues" => gh.verify_issues = parse_toml_bool(value),
         _ => {
             eprintln!("Warning: unknown key \"{key}\" in [github] section (ignored)");
+        }
+    }
+}
+
+/// Parse a key=value pair inside a `[lifecycle]` TOML section.
+fn parse_toml_lifecycle_key(key: &str, value: &str, lc: &mut crate::types::LifecycleConfig) {
+    match key {
+        "track_history" => lc.track_history = parse_toml_bool(value),
+        "allowed_statuses" => lc.allowed_statuses = parse_toml_string_array(value),
+        _ => {
+            eprintln!("Warning: unknown key \"{key}\" in [lifecycle] section (ignored)");
+        }
+    }
+}
+
+/// Parse a key=value pair inside nested lifecycle sections like `[lifecycle.max_age]`
+/// or `[lifecycle.guards."review→active"]`.
+fn parse_toml_lifecycle_nested(
+    section: &str,
+    key: &str,
+    value: &str,
+    lc: &mut crate::types::LifecycleConfig,
+) {
+    if section == "lifecycle.max_age" {
+        if let Ok(days) = value.trim().parse::<u64>() {
+            lc.max_age.insert(key.to_string(), days);
+        }
+    } else if let Some(guard_name) = section.strip_prefix("lifecycle.guards.") {
+        // Strip surrounding quotes from guard name if present
+        let name = guard_name.trim_matches('"').to_string();
+        let guard = lc.guards.entry(name).or_default();
+        match key {
+            "min_score" => {
+                if let Ok(n) = value.trim().parse::<u32>() {
+                    guard.min_score = Some(n);
+                }
+            }
+            "require_sections" => guard.require_sections = parse_toml_string_array(value),
+            "no_stale" => guard.no_stale = Some(parse_toml_bool(value)),
+            "stale_threshold" => {
+                if let Ok(n) = value.trim().parse::<usize>() {
+                    guard.stale_threshold = Some(n);
+                }
+            }
+            "message" => guard.message = Some(parse_toml_string(value)),
+            _ => {
+                eprintln!("Warning: unknown key \"{key}\" in [lifecycle.guards] section (ignored)");
+            }
         }
     }
 }
@@ -534,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_config_json_takes_priority_over_toml() {
+    fn test_load_config_toml_takes_priority_over_json() {
         let tmp = TempDir::new().unwrap();
         fs::write(
             tmp.path().join("specsync.json"),
@@ -548,7 +920,28 @@ mod tests {
         .unwrap();
 
         let config = load_config(tmp.path());
-        assert_eq!(config.specs_dir, "from-json");
+        // TOML at root takes priority over JSON at root
+        assert_eq!(config.specs_dir, "from-toml");
+    }
+
+    #[test]
+    fn test_load_config_v4_toml_takes_priority() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join(".specsync")).unwrap();
+        fs::write(
+            tmp.path().join(".specsync/config.toml"),
+            "specs_dir = \"v4-specs\"\nsource_dirs = [\"src\"]\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("specsync.json"),
+            r#"{"specsDir": "legacy", "sourceDirs": ["src"]}"#,
+        )
+        .unwrap();
+
+        let config = load_config(tmp.path());
+        // v4 .specsync/config.toml wins over legacy root files
+        assert_eq!(config.specs_dir, "v4-specs");
     }
 
     #[test]

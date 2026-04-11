@@ -127,6 +127,15 @@ specsync compact --keep 10                 # Compact old changelog entries in sp
 specsync archive-tasks                     # Archive completed tasks from tasks.md
 specsync view --role dev                   # View specs filtered by role
 specsync merge                             # Auto-resolve merge conflicts in specs
+specsync new auth                          # Quick-create a minimal spec (auto-detects sources)
+specsync stale                             # Find specs that haven't kept up with code changes
+specsync rules                             # Show configured validation rules
+specsync lifecycle status                  # Show lifecycle status of all specs
+specsync lifecycle promote auth            # Advance auth spec to next status
+specsync lifecycle history auth            # View transition history for a spec
+specsync lifecycle guard auth              # Dry-run: check if guards would pass
+specsync lifecycle auto-promote            # Promote all specs that pass guards
+specsync lifecycle enforce --all           # CI: validate lifecycle rules
 specsync hooks install                    # Install agent instructions + git hooks
 specsync hooks status                     # Check what's installed
 specsync mcp                               # Start MCP server for AI agent integration
@@ -295,6 +304,18 @@ specsync [command] [flags]
 | `archive-tasks` | Archive completed tasks from companion `tasks.md` files |
 | `view` | View specs filtered by role (`--role dev\|qa\|product\|agent`) |
 | `merge` | Auto-resolve git merge conflicts in spec files |
+| `new <name>` | Quick-create a minimal spec with auto-detected source files. `--full` includes companion files |
+| `stale` | Identify specs that haven't been updated since their source files changed |
+| `rules` | Display configured validation rules and built-in rule status |
+| `migrate` | Upgrade from 3.x to 4.0.0 layout (`.specsync/` directory, TOML config). `--dry-run` to preview, `--no-backup` to skip |
+| `lifecycle promote <spec>` | Advance spec to next status (draft→review→active→stable) |
+| `lifecycle demote <spec>` | Step back one status level |
+| `lifecycle set <spec> <status>` | Set spec to any status (with transition validation) |
+| `lifecycle status [spec]` | Show lifecycle status of one or all specs |
+| `lifecycle history <spec>` | Show transition history (audit log) for a spec |
+| `lifecycle guard <spec> [target]` | Dry-run guard evaluation — check if transition would pass |
+| `lifecycle auto-promote` | Promote all specs that pass their transition guards. `--dry-run` to preview |
+| `lifecycle enforce` | CI enforcement — validate lifecycle rules, exit non-zero on violations. `--all` for all checks |
 | `issues` | Verify GitHub issue references in spec frontmatter. `--create` to create missing issues |
 | `hooks` | Install/uninstall agent instructions and git hooks (`install`, `uninstall`, `status`) |
 | `mcp` | Start MCP server for AI agent integration (Claude Code, Cursor, etc.) |
@@ -313,6 +334,12 @@ specsync [command] [flags]
 | `--force` | Skip hash cache and re-validate all specs |
 | `--create-issues` | Create GitHub issues for specs with validation errors (on `check`) |
 | `--dry-run` | Preview changes without writing files (on `compact`, `archive-tasks`, `merge`) |
+| `--stale N` | Flag specs N+ commits behind their source files (on `check`) |
+| `--exclude-status <s>` | Exclude specs with the given status. Repeatable |
+| `--only-status <s>` | Only process specs with the given status. Repeatable |
+| `--mermaid` | Output dependency graph as Mermaid diagram (on `deps`) |
+| `--dot` | Output dependency graph as Graphviz DOT (on `deps`) |
+| `--full` | Include companion files (on `new`) |
 | `--json` | Structured JSON output |
 
 ### Exit Codes
@@ -499,8 +526,12 @@ Available on the [GitHub Marketplace](https://github.com/marketplace/actions/spe
 | `require-coverage` | `0` | Minimum file coverage % |
 | `root` | `.` | Project root directory |
 | `args` | `''` | Extra CLI arguments |
+| `comment` | `false` | Post spec drift results as a PR comment (requires `pull_request` event) |
+| `token` | `${{ github.token }}` | GitHub token for posting PR comments (needs write permissions) |
 
-### Workflow example
+### Workflow examples
+
+**Basic CI check:**
 
 ```yaml
 name: Spec Check
@@ -516,6 +547,29 @@ jobs:
           strict: 'true'
           require-coverage: '100'
 ```
+
+**With PR comments:**
+
+```yaml
+name: Spec Check
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  specsync:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: CorvidLabs/spec-sync@v3
+        with:
+          strict: 'true'
+          comment: 'true'
+```
+
+When `comment: 'true'` is set, SpecSync posts (or updates) a PR comment showing spec drift — added/removed exports since the base branch. The comment is automatically updated on subsequent pushes.
 
 ---
 
@@ -562,7 +616,99 @@ ai_provider = "claude"
 ai_timeout = 120
 ```
 
-Config resolution order: `specsync.json` → `.specsync.toml` → defaults with auto-detected source dirs.
+Config resolution order: `.specsync/config.toml` → `.specsync/config.json` → `.specsync.toml` → `specsync.json` → defaults with auto-detected source dirs.
+
+### Lifecycle Guards
+
+Configure transition guards in `specsync.json` to enforce quality gates before specs can be promoted:
+
+```json
+{
+  "lifecycle": {
+    "trackHistory": true,
+    "guards": {
+      "review→active": {
+        "minScore": 70,
+        "requireSections": ["Public API", "Invariants"]
+      },
+      "active→stable": {
+        "minScore": 85,
+        "noStale": true,
+        "requireSections": ["Public API", "Behavioral Examples", "Error Cases"]
+      },
+      "*→stable": {
+        "minScore": 85,
+        "message": "Stable specs require high quality scores"
+      }
+    }
+  }
+}
+```
+
+| Guard Option | Type | Description |
+|-------------|------|-------------|
+| `minScore` | `number?` | Minimum spec quality score (0-100) required |
+| `requireSections` | `string[]` | Sections that must exist with non-empty content |
+| `noStale` | `bool?` | Spec must not be stale (source files ahead of spec) |
+| `staleThreshold` | `number?` | Max commits behind when `noStale` is true (default: 5) |
+| `message` | `string?` | Custom message shown when guard blocks transition |
+
+Guard keys use `"from→to"` format (e.g., `"review→active"`) or `"*→to"` for wildcard. ASCII arrows (`->`) also work.
+
+When `trackHistory` is enabled (default: `true`), every status transition is recorded in the spec's frontmatter:
+
+```yaml
+lifecycle_log:
+  - "2026-04-11: draft → review"
+  - "2026-04-12: review → active"
+```
+
+Use `specsync lifecycle guard <spec>` to dry-run guard evaluation without making changes.
+
+### Auto-Promote & CI Enforcement
+
+**Auto-promote** scans all specs and promotes any whose next transition passes all configured guards:
+
+```bash
+specsync lifecycle auto-promote            # promote eligible specs
+specsync lifecycle auto-promote --dry-run  # preview without modifying
+```
+
+**Enforce** validates lifecycle rules for CI pipelines (exits non-zero on violations):
+
+```bash
+specsync lifecycle enforce --all           # run all checks
+specsync lifecycle enforce --require-status # every spec needs a status field
+specsync lifecycle enforce --max-age       # flag stale statuses
+specsync lifecycle enforce --allowed       # check allowed statuses
+```
+
+Configure enforcement rules in `specsync.json`:
+
+```json
+{
+  "lifecycle": {
+    "maxAge": {
+      "draft": 30,
+      "review": 14
+    },
+    "allowedStatuses": ["draft", "review", "active", "stable"]
+  }
+}
+```
+
+| Config Key | Type | Description |
+|-----------|------|-------------|
+| `maxAge` | `object` | Maximum days a spec may stay in each status (e.g., `"draft": 30`) |
+| `allowedStatuses` | `string[]` | Restrict specs to these statuses only |
+
+**GitHub Action** — add `lifecycle-enforce: 'true'` to the spec-sync action to enforce lifecycle rules in CI:
+
+```yaml
+- uses: CorvidLabs/spec-sync@v3
+  with:
+    lifecycle-enforce: 'true'
+```
 
 ---
 
@@ -673,13 +819,17 @@ src/
 ├── hash_cache.rs      Incremental validation via content hashing
 ├── hooks.rs           Agent instruction + git hook management
 ├── importer.rs        External importers (GitHub Issues, Jira, Confluence)
+├── lifecycle.rs       Spec status transitions (promote, demote, set, status, history, guard, auto-promote, enforce)
 ├── manifest.rs        Package manifest parsing (Cargo.toml, package.json, etc.)
 ├── mcp.rs             MCP server for AI agent integration (JSON-RPC stdio)
 ├── merge.rs           Auto-resolve merge conflicts in spec files
+├── new.rs             Quick-create minimal spec with source auto-detection
 ├── parser.rs          Frontmatter + spec body parsing
+├── rules.rs           Display configured validation rules
 ├── registry.rs        Registry loading, generation, and remote fetching
 ├── schema.rs          SQL schema parsing for column validation
 ├── scoring.rs         Spec quality scoring (0–100, weighted rubric)
+├── stale.rs           Staleness detection (spec vs source modification)
 ├── types.rs           Data types + config schema
 ├── validator.rs       Validation + coverage + cross-project ref detection
 ├── view.rs            Role-filtered spec viewing (dev, qa, product, agent)

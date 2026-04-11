@@ -208,12 +208,16 @@ pub enum OutputFormat {
 }
 
 /// Valid spec lifecycle statuses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Lifecycle order: draft → review → active → stable → deprecated → archived
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SpecStatus {
     Draft,
+    Review,
     Active,
     Stable,
     Deprecated,
+    Archived,
 }
 
 impl SpecStatus {
@@ -221,21 +225,90 @@ impl SpecStatus {
     pub fn from_str_loose(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "draft" => Some(Self::Draft),
+            "review" => Some(Self::Review),
             "active" => Some(Self::Active),
             "stable" => Some(Self::Stable),
             "deprecated" => Some(Self::Deprecated),
+            "archived" => Some(Self::Archived),
             _ => None,
         }
     }
 
-    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Draft => "draft",
+            Self::Review => "review",
             Self::Active => "active",
             Self::Stable => "stable",
             Self::Deprecated => "deprecated",
+            Self::Archived => "archived",
         }
+    }
+
+    /// All valid statuses in lifecycle order.
+    pub fn all() -> &'static [SpecStatus] {
+        &[
+            Self::Draft,
+            Self::Review,
+            Self::Active,
+            Self::Stable,
+            Self::Deprecated,
+            Self::Archived,
+        ]
+    }
+
+    /// Lifecycle ordinal (0-based) for transition logic.
+    pub fn ordinal(&self) -> usize {
+        match self {
+            Self::Draft => 0,
+            Self::Review => 1,
+            Self::Active => 2,
+            Self::Stable => 3,
+            Self::Deprecated => 4,
+            Self::Archived => 5,
+        }
+    }
+
+    /// Next status in the lifecycle, or None if already at the end.
+    pub fn next(&self) -> Option<Self> {
+        let all = Self::all();
+        let idx = self.ordinal();
+        all.get(idx + 1).copied()
+    }
+
+    /// Previous status in the lifecycle, or None if already at the start.
+    pub fn prev(&self) -> Option<Self> {
+        let idx = self.ordinal();
+        if idx == 0 {
+            return None;
+        }
+        Some(Self::all()[idx - 1])
+    }
+
+    /// Valid transitions from this status.
+    /// Forward: one step up. Backward: one step down.
+    /// Special: any status can go to deprecated; deprecated can go to archived.
+    pub fn valid_transitions(&self) -> Vec<Self> {
+        let mut transitions = Vec::new();
+        if let Some(next) = self.next() {
+            transitions.push(next);
+        }
+        if let Some(prev) = self.prev() {
+            transitions.push(prev);
+        }
+        // Any status can be deprecated directly
+        if *self != Self::Deprecated
+            && *self != Self::Archived
+            && !transitions.contains(&Self::Deprecated)
+        {
+            transitions.push(Self::Deprecated);
+        }
+        transitions
+    }
+
+    /// Check if transitioning to `target` is valid.
+    pub fn can_transition_to(&self, target: &Self) -> bool {
+        self.valid_transitions().contains(target)
     }
 }
 
@@ -253,6 +326,8 @@ pub struct Frontmatter {
     pub implements: Vec<u64>,
     /// GitHub issue numbers for ongoing/epic-style tracking.
     pub tracks: Vec<u64>,
+    /// Lifecycle transition history log entries (e.g. "2026-04-11: draft → review").
+    pub lifecycle_log: Vec<String>,
 }
 
 impl Frontmatter {
@@ -436,6 +511,61 @@ pub struct SpecSyncConfig {
     /// - `strict`: exit 1 on any validation error.
     #[serde(default)]
     pub enforcement: EnforcementMode,
+
+    /// Lifecycle transition guards — configurable rules that must pass before
+    /// a spec can be promoted/transitioned.
+    #[serde(default)]
+    pub lifecycle: LifecycleConfig,
+}
+
+/// Lifecycle configuration for transition guards and history tracking.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifecycleConfig {
+    /// Transition guard rules keyed by "from→to" (e.g. "review→active").
+    /// Use "*→<status>" to apply to all transitions into a status.
+    #[serde(default)]
+    pub guards: std::collections::HashMap<String, TransitionGuard>,
+
+    /// Whether to record transitions in spec frontmatter (default: true).
+    #[serde(default = "default_true")]
+    pub track_history: bool,
+
+    /// Maximum age (in days) a spec may stay in a given status before being flagged.
+    /// Keys are status names (e.g. "draft": 30, "review": 14).
+    #[serde(default)]
+    pub max_age: std::collections::HashMap<String, u64>,
+
+    /// Required statuses — specs must have one of these statuses, or `enforce` will flag them.
+    /// Empty means no restriction.
+    #[serde(default)]
+    pub allowed_statuses: Vec<String>,
+}
+
+/// A transition guard — conditions that must be satisfied before a lifecycle
+/// transition is allowed.
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionGuard {
+    /// Minimum spec quality score (0-100) required.
+    #[serde(default)]
+    pub min_score: Option<u32>,
+
+    /// Sections that must exist and have non-empty content.
+    #[serde(default)]
+    pub require_sections: Vec<String>,
+
+    /// Spec must not be stale (source files changed since spec was last updated).
+    #[serde(default)]
+    pub no_stale: Option<bool>,
+
+    /// Maximum staleness threshold (commits behind) — only used when no_stale is true.
+    #[serde(default)]
+    pub stale_threshold: Option<usize>,
+
+    /// Custom message shown when the guard blocks a transition.
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 /// GitHub integration configuration for linking specs to issues.
@@ -718,6 +848,7 @@ impl Default for SpecSyncConfig {
             task_archive_days: None,
             github: None,
             enforcement: EnforcementMode::default(),
+            lifecycle: LifecycleConfig::default(),
         }
     }
 }

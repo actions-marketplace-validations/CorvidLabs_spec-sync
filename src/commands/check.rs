@@ -15,9 +15,11 @@ use crate::parser;
 use crate::types;
 use crate::validator::{compute_coverage, get_schema_table_names};
 
+use crate::config::is_legacy_layout;
+
 use super::{
-    build_schema_columns, compute_exit_code, create_drift_issues, exit_with_status, filter_specs,
-    load_and_discover, run_validation,
+    build_schema_columns, compute_exit_code, create_drift_issues, exit_with_status,
+    filter_by_status, filter_specs, load_and_discover, run_validation,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -33,12 +35,31 @@ pub fn cmd_check(
     explain: bool,
     stale: Option<Option<usize>>,
     spec_filters: &[String],
+    exclude_status: &[String],
+    only_status: &[String],
 ) {
     use hash_cache::{ChangeClassification, ChangeKind};
     use types::OutputFormat::*;
 
+    // Auto-detect legacy 3.x layout and suggest migration
+    if is_legacy_layout(root) && matches!(format, Text) {
+        eprintln!(
+            "{} Legacy 3.x layout detected (config files at project root).",
+            "⚠".yellow()
+        );
+        eprintln!(
+            "  Run {} to upgrade to v4.0.0 (.specsync/ directory structure, TOML config).",
+            "specsync migrate".cyan()
+        );
+        eprintln!(
+            "  Use {} to preview changes without modifying files.\n",
+            "specsync migrate --dry-run".dimmed()
+        );
+    }
+
     let (config, all_spec_files) = load_and_discover(root, fix);
     let spec_files = filter_specs(root, &all_spec_files, spec_filters);
+    let spec_files = filter_by_status(&spec_files, exclude_status, only_status);
     // CLI --enforcement flag overrides config; --strict implies strict enforcement.
     let enforcement = enforcement.unwrap_or(if strict {
         types::EnforcementMode::Strict
