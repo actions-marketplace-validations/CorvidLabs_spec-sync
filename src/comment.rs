@@ -4,34 +4,8 @@
 //! including direct links to spec files, actionable checklists, and diff-aware
 //! suggestions for updating specs.
 
-use crate::types::{CoverageReport, ValidationResult};
+use crate::types::CoverageReport;
 use std::path::Path;
-
-/// Information about a spec violation suitable for PR comment rendering.
-#[derive(Debug, Clone)]
-pub struct SpecViolation {
-    /// Relative path to the spec file (e.g., `specs/auth.spec.md`).
-    pub spec_path: String,
-    /// Error messages from validation.
-    pub errors: Vec<String>,
-    /// Warning messages from validation.
-    pub warnings: Vec<String>,
-    /// Actionable fix suggestions (reserved for future diff-aware suggestions).
-    #[allow(dead_code)]
-    pub fixes: Vec<String>,
-}
-
-impl SpecViolation {
-    /// Build a violation from a `ValidationResult`.
-    pub fn from_result(result: &ValidationResult) -> Self {
-        Self {
-            spec_path: result.spec_path.clone(),
-            errors: result.errors.clone(),
-            warnings: result.warnings.clone(),
-            fixes: result.fixes.clone(),
-        }
-    }
-}
 
 /// Build a GitHub-friendly file link.  When `repo` and `branch` are known we
 /// produce a full `https://github.com/…/blob/…` URL; otherwise we fall back to
@@ -190,43 +164,6 @@ pub fn render_check_comment(
     out
 }
 
-/// Render a GitHub PR comment for the `specsync comment` subcommand, combining
-/// check results with diff-aware suggestions.
-pub fn render_comment_body(
-    violations: &[SpecViolation],
-    coverage: &CoverageReport,
-    repo: Option<&str>,
-    branch: Option<&str>,
-) -> String {
-    let total = violations.len();
-    let errors: usize = violations.iter().map(|v| v.errors.len()).sum();
-    let warnings: usize = violations.iter().map(|v| v.warnings.len()).sum();
-    let passed = violations.iter().filter(|v| v.errors.is_empty()).count();
-    let overall_passed = errors == 0;
-
-    let all_errors: Vec<String> = violations
-        .iter()
-        .flat_map(|v| v.errors.iter().map(|e| format!("{}: {e}", v.spec_path)))
-        .collect();
-    let all_warnings: Vec<String> = violations
-        .iter()
-        .flat_map(|v| v.warnings.iter().map(|w| format!("{}: {w}", v.spec_path)))
-        .collect();
-
-    render_check_comment(
-        total,
-        passed,
-        warnings,
-        errors,
-        &all_errors,
-        &all_warnings,
-        coverage,
-        overall_passed,
-        repo,
-        branch,
-    )
-}
-
 /// Group prefixed messages (`spec/path: message`) by spec path.
 /// Returns a vector of (spec_path, messages) preserving insertion order.
 fn group_by_spec(messages: &[String]) -> Vec<(String, Vec<String>)> {
@@ -285,6 +222,50 @@ pub fn detect_branch(root: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug, Clone)]
+    struct SpecViolation {
+        spec_path: String,
+        errors: Vec<String>,
+        warnings: Vec<String>,
+        #[allow(dead_code)]
+        fixes: Vec<String>,
+    }
+
+    fn render_comment_body(
+        violations: &[SpecViolation],
+        coverage: &CoverageReport,
+        repo: Option<&str>,
+        branch: Option<&str>,
+    ) -> String {
+        let total = violations.len();
+        let errors: usize = violations.iter().map(|v| v.errors.len()).sum();
+        let warnings: usize = violations.iter().map(|v| v.warnings.len()).sum();
+        let passed = violations.iter().filter(|v| v.errors.is_empty()).count();
+        let overall_passed = errors == 0;
+
+        let all_errors: Vec<String> = violations
+            .iter()
+            .flat_map(|v| v.errors.iter().map(|e| format!("{}: {e}", v.spec_path)))
+            .collect();
+        let all_warnings: Vec<String> = violations
+            .iter()
+            .flat_map(|v| v.warnings.iter().map(|w| format!("{}: {w}", v.spec_path)))
+            .collect();
+
+        render_check_comment(
+            total,
+            passed,
+            warnings,
+            errors,
+            &all_errors,
+            &all_warnings,
+            coverage,
+            overall_passed,
+            repo,
+            branch,
+        )
+    }
 
     #[test]
     fn test_spec_link_with_repo() {
