@@ -102,10 +102,20 @@ pub fn cmd_new(root: &Path, module_name: &str, full: bool) {
     }
 
     if full {
-        generator::generate_companion_files_for_spec(&spec_dir, module_name);
+        generator::generate_companion_files_for_spec(
+            &spec_dir,
+            module_name,
+            config.companions.design,
+        );
+        let design_note = if config.companions.design {
+            ", design.md"
+        } else {
+            ""
+        };
         println!(
-            "  {} Created companion files (tasks.md, context.md, requirements.md)",
+            "  {} Created companion files (tasks.md, context.md, requirements.md, testing.md{})",
             "→".cyan(),
+            design_note,
         );
     }
 }
