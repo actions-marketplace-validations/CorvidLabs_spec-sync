@@ -36,10 +36,10 @@ fn collect_pub_items(node: &tree_sitter::Node, src: &[u8], symbols: &mut Vec<Str
 
     for child in node.children(&mut cursor) {
         // Only look at top-level items (source_file children)
-        if is_pub_item(&child, src) {
-            if let Some(name) = extract_item_name(&child, src) {
-                symbols.push(name);
-            }
+        if is_pub_item(&child, src)
+            && let Some(name) = extract_item_name(&child, src)
+        {
+            symbols.push(name);
         }
     }
 }

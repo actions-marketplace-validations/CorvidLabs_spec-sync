@@ -72,19 +72,19 @@ pub fn view_spec(spec_path: &Path, role: &str) -> Result<String, String> {
     }
 
     // For product role, also show requirements companion if it exists
-    if role == "product" {
-        if let Some(parent) = spec_path.parent() {
-            let req_path = parent.join("requirements.md");
-            if req_path.exists() {
-                if let Ok(req_content) = fs::read_to_string(&req_path) {
-                    // Strip frontmatter from requirements.md
-                    let req_body = strip_frontmatter(&req_content);
-                    if !req_body.trim().is_empty() {
-                        output.push_str("## Requirements\n\n");
-                        output.push_str(req_body.trim());
-                        output.push_str("\n\n");
-                    }
-                }
+    if role == "product"
+        && let Some(parent) = spec_path.parent()
+    {
+        let req_path = parent.join("requirements.md");
+        if req_path.exists()
+            && let Ok(req_content) = fs::read_to_string(&req_path)
+        {
+            // Strip frontmatter from requirements.md
+            let req_body = strip_frontmatter(&req_content);
+            if !req_body.trim().is_empty() {
+                output.push_str("## Requirements\n\n");
+                output.push_str(req_body.trim());
+                output.push_str("\n\n");
             }
         }
     }
@@ -133,10 +133,10 @@ fn split_sections(body: &str) -> Vec<(String, String)> {
 
 /// Strip YAML frontmatter from a markdown file.
 fn strip_frontmatter(content: &str) -> &str {
-    if let Some(stripped) = content.strip_prefix("---\n") {
-        if let Some(end) = stripped.find("\n---\n") {
-            return &stripped[end + 5..]; // skip past closing ---\n
-        }
+    if let Some(stripped) = content.strip_prefix("---\n")
+        && let Some(end) = stripped.find("\n---\n")
+    {
+        return &stripped[end + 5..]; // skip past closing ---\n
     }
     content
 }
