@@ -1,4 +1,4 @@
 {
   "specsDir": "specs",
-  "sourceDir": "src"
+  "sourceDirs": ["src"]
 }
